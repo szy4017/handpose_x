@@ -127,13 +127,18 @@ if __name__ == "__main__":
     y2 = np.clip(y2,0,img.shape[0]-1)
     '''
 
+    select_area_img = cv2.imread('./image/left.jpg')
+    select_area_img = cv2.resize(select_area_img, (129, 406))
+    select_bottom_area_img = cv2.imread('./image/bottom.jpg')
     # 用摄像头获取图像进行预测
     capture = cv2.VideoCapture(0)
+    flag = 0
     while True:
         ret, img = capture.read()
         if ret:
             img_width = img.shape[1]
             img_height = img.shape[0]
+            img = cv2.flip(img, 1)
             # 输入图片预处理
             img_ = cv2.resize(img, (ops.img_size[1],ops.img_size[0]), interpolation = cv2.INTER_CUBIC)
             img_ = img_.astype(np.float32)
@@ -154,6 +159,42 @@ if __name__ == "__main__":
             output = pre_.cpu().detach().numpy()
             output = np.squeeze(output)
 
+            # 判断当前的手势含义，输入output，输出hand_pose
+            # np.save('./pose_recog_test_data/pose_1_{}.npy'.format(flag), output)
+            # flag = flag + 1
+            # if flag > 10:
+            #     break
+
+            img_show = img.copy()
+            # 绘制选择区域
+            # 选择区域图像的宽度和高度
+            select_area_img_height, select_area_img_width, _ = select_area_img.shape
+            bottom_img_height, bottom_img_width, _ = select_bottom_area_img.shape
+            # 设置选择区域图像的不透明度
+            opacity = 0.8
+            # 计算选择区域图像在原始图像中的位置
+            x_offset = 0
+            y_offset = int(img_height / 2 - select_area_img_height / 2)
+
+            bottom_x_offset = int(img_width / 2 - bottom_img_width / 2)
+            bottom_y_offset = int(img_height - bottom_img_height)
+
+            # 将选择图像添加到原始图像的左侧
+            img_show[y_offset:y_offset + select_area_img_height, x_offset:x_offset + select_area_img_width] = cv2.addWeighted(select_area_img,
+                                                                                                                              opacity,
+                                                                                                                              img_show[y_offset:y_offset + select_area_img_height,
+                                                                                                                              x_offset:x_offset + select_area_img_width],
+                                                                                                                              1 - opacity,
+                                                                                                                              0)
+            # 将选择图像添加到原始图像的底部
+            img_show[bottom_y_offset:bottom_y_offset + bottom_img_height,
+            bottom_x_offset:bottom_x_offset + bottom_img_width] = cv2.addWeighted(select_bottom_area_img,
+                                                                                  opacity,
+                                                                                  img_show[bottom_y_offset:bottom_y_offset + bottom_img_height,
+                                                                                  bottom_x_offset:bottom_x_offset + bottom_img_width],
+                                                                                  1 - opacity,
+                                                                                  0)
+
             pts_hand = {} #构建关键点连线可视化结构
             for i in range(int(output.shape[0]/2)):
                 x = (output[i*2+0]*float(img_width))
@@ -164,19 +205,20 @@ if __name__ == "__main__":
                     "x":x,
                     "y":y,
                     }
-            draw_bd_handpose(img,pts_hand,0,0) # 绘制关键点连线
+            draw_bd_handpose(img_show, pts_hand,0,0) # 绘制关键点连线
 
             #------------- 绘制关键点
             for i in range(int(output.shape[0]/2)):
                 x = (output[i*2+0]*float(img_width))
                 y = (output[i*2+1]*float(img_height))
 
-                cv2.circle(img, (int(x),int(y)), 3, (255,50,60),-1)
-                cv2.circle(img, (int(x),int(y)), 1, (255,150,180),-1)
+                cv2.circle(img_show, (int(x),int(y)), 3, (255,50,60),-1)
+                cv2.circle(img_show, (int(x),int(y)), 1, (255,150,180),-1)
 
             if ops.vis:
                 cv2.namedWindow('image',0)
-                cv2.imshow('image',img)
+                cv2.resizeWindow('image', 640, 480)
+                cv2.imshow('image',img_show)
                 if cv2.waitKey(5) == 27 :
                     break
 

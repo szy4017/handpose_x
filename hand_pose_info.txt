@@ -1,0 +1,6 @@
+./pose_recog_trian_data/pose_0_*.npy  表示握拳————None
+./pose_recog_trian_data/pose_1_*.npy  表示五指张开————蛋糕放置
+./pose_recog_trian_data/pose_2_*.npy  表示伸出食指————蛋糕选择
+./pose_recog_trian_data/pose_3_*.npy  表示剪刀手————蛋糕装饰
+./pose_recog_trian_data/pose_4_*.npy  表示ok手势————蛋糕放大缩小
+./pose_recog_trian_data/pose_5_*.npy  表示手枪手————蛋糕旋转
