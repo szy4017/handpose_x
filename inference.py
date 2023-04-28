@@ -126,6 +126,61 @@ if __name__ == "__main__":
     y1 = np.clip(y1,0,img.shape[0]-1)
     y2 = np.clip(y2,0,img.shape[0]-1)
     '''
+
+    # 用摄像头获取图像进行预测
+    capture = cv2.VideoCapture(0)
+    while True:
+        ret, img = capture.read()
+        if ret:
+            img_width = img.shape[1]
+            img_height = img.shape[0]
+            # 输入图片预处理
+            img_ = cv2.resize(img, (ops.img_size[1],ops.img_size[0]), interpolation = cv2.INTER_CUBIC)
+            img_ = img_.astype(np.float32)
+            img_ = (img_-128.)/256.
+
+            img_ = img_.transpose(2, 0, 1)
+            img_ = torch.from_numpy(img_)
+            img_ = img_.unsqueeze_(0)
+
+            if use_cuda:
+                img_ = img_.cuda()  # (bs, 3, h, w)
+
+            start = time.time()
+            pre_ = model_(img_.float()) # 模型推理
+            end = time.time()
+            print('inference time: ', end-start)
+
+            output = pre_.cpu().detach().numpy()
+            output = np.squeeze(output)
+
+            pts_hand = {} #构建关键点连线可视化结构
+            for i in range(int(output.shape[0]/2)):
+                x = (output[i*2+0]*float(img_width))
+                y = (output[i*2+1]*float(img_height))
+
+                pts_hand[str(i)] = {}
+                pts_hand[str(i)] = {
+                    "x":x,
+                    "y":y,
+                    }
+            draw_bd_handpose(img,pts_hand,0,0) # 绘制关键点连线
+
+            #------------- 绘制关键点
+            for i in range(int(output.shape[0]/2)):
+                x = (output[i*2+0]*float(img_width))
+                y = (output[i*2+1]*float(img_height))
+
+                cv2.circle(img, (int(x),int(y)), 3, (255,50,60),-1)
+                cv2.circle(img, (int(x),int(y)), 1, (255,150,180),-1)
+
+            if ops.vis:
+                cv2.namedWindow('image',0)
+                cv2.imshow('image',img)
+                if cv2.waitKey(5) == 27 :
+                    break
+
+    '''
     with torch.no_grad():
         idx = 0
         for file in os.listdir(ops.test_path):
@@ -175,7 +230,9 @@ if __name__ == "__main__":
                 cv2.namedWindow('image',0)
                 cv2.imshow('image',img)
                 if cv2.waitKey(600) == 27 :
-                    break
+                    break    
+    '''
+
 
     cv2.destroyAllWindows()
 
