@@ -24,10 +24,12 @@ from models.shufflenet import ShuffleNet
 from models.mobilenetv2 import MobileNetV2
 from torchvision.models import shufflenet_v2_x1_5 ,shufflenet_v2_x1_0 , shufflenet_v2_x2_0
 from models.rexnetv1 import ReXNetV1
+from PIL import Image, ImageSequence
 
 from utils.common_utils import *
 import copy
 from hand_data_iter.datasets import draw_bd_handpose
+from pose_recog import MLP as PoseClassifier
 
 if __name__ == "__main__":
 
@@ -98,6 +100,8 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if use_cuda else "cpu")
     model_ = model_.to(device)
     model_.eval() # 设置为前向推断模式
+    pose_model = PoseClassifier(input_size=42, hidden_size=64, output_size=6)
+    pose_model.load_state_dict(torch.load('model_params.pth'))
 
     # print(model_)# 打印模型结构
 
@@ -127,17 +131,33 @@ if __name__ == "__main__":
     y2 = np.clip(y2,0,img.shape[0]-1)
     '''
 
+    cv2.namedWindow('image', 0)
+    cv2.resizeWindow('image', 1600, 600)
+
+    # 初始化gif变量
+    gif_frame = 0
+    gif_start_time = 0
+    gif_play_time = 3
+
     select_area_img = cv2.imread('./image/left.jpg')
     select_area_img = cv2.resize(select_area_img, (129, 406))
     select_bottom_area_img = cv2.imread('./image/bottom.jpg')
+    cake_show_img = cv2.imread('./cake_show/plate.jpg')
+    background_img = np.zeros((600, 1600, 3)).astype('uint8')
     # 用摄像头获取图像进行预测
     capture = cv2.VideoCapture(0)
     flag = 0
+    cake_state = '0'
+    cake_gif = Image.open('./cake_show/cake-0-1.gif')
     while True:
+        # 获取当前时间
+        current_time = cv2.getTickCount() / cv2.getTickFrequency()
         ret, img = capture.read()
         if ret:
             img_width = img.shape[1]
             img_height = img.shape[0]
+            cake_shwow_img_width = cake_show_img.shape[1]
+            cake_shwow_img_height = cake_show_img.shape[0]
             img = cv2.flip(img, 1)
             # 输入图片预处理
             img_ = cv2.resize(img, (ops.img_size[1],ops.img_size[0]), interpolation = cv2.INTER_CUBIC)
@@ -164,6 +184,41 @@ if __name__ == "__main__":
             # flag = flag + 1
             # if flag > 10:
             #     break
+
+            # 通过姿势分类模型来分类手势类别
+            pose_output = pose_model(torch.tensor(output[None:], dtype=torch.float32))
+            pose_flag = torch.max(pose_output.data)
+            pose_flag = int(pose_flag)
+            print('Predicted pose flag:', pose_flag)
+
+            # 根据手势变化蛋糕动画
+            if pose_flag == 1:
+                cake_state = '0-1-2'
+
+            if cake_state == '0-1-2' and pose_flag == 3:
+                # 更换gif
+                cake_gif = Image.open('./cake_show/cake-0-1-2.gif')
+                gif_frame = 0
+                gif_start_time = current_time
+
+
+            # 计算gif播放时间
+            gif_time = current_time - gif_start_time
+
+            # 如果gif播放时间超过3秒
+            if gif_time > gif_play_time:
+                # 更新gif帧
+                gif_frame += 10
+                gif_frame %= cake_gif.n_frames
+
+                # 更新gif播放时间
+                gif_start_time = current_time
+
+            # 获取gif当前帧
+            cake_gif.seek(gif_frame)
+            gif_frame_image = cake_gif.convert('RGB')
+            cake_show_img = np.array(gif_frame_image)
+            cake_show_img = cv2.cvtColor(cake_show_img, cv2.COLOR_RGB2BGR)
 
             img_show = img.copy()
             # 绘制选择区域
@@ -215,10 +270,10 @@ if __name__ == "__main__":
                 cv2.circle(img_show, (int(x),int(y)), 3, (255,50,60),-1)
                 cv2.circle(img_show, (int(x),int(y)), 1, (255,150,180),-1)
 
+            background_img[60:60+img_height, :img_width, :] = img_show
+            background_img[:cake_show_img.shape[0], 800:800+cake_show_img.shape[1], :] = cake_show_img
             if ops.vis:
-                cv2.namedWindow('image',0)
-                cv2.resizeWindow('image', 640, 480)
-                cv2.imshow('image',img_show)
+                cv2.imshow('image',background_img)
                 if cv2.waitKey(5) == 27 :
                     break
 
