@@ -130,171 +130,159 @@ if __name__ == "__main__":
     y1 = np.clip(y1,0,img.shape[0]-1)
     y2 = np.clip(y2,0,img.shape[0]-1)
     '''
-    cake_gif_dict = {'1-1': './right_window/cake1-1.gif', '1-2': './right_window/cake1-2.gif',
-                     '1-3': './right_window/cake1-3.gif', '1-4': './right_window/cake1-4.gif',
-                     '1-5': './right_window/cake1-5.gif', '1-6': './right_window/cake1-6.gif',
-                     '1-7': './right_window/cake1-7.gif',
-                     '1-7-1': './right_window/cake1-7-1.gif', '1-7-2': './right_window/cake1-7-2.gif'}
-    cake_gif = None
-    # cake_gif = Image.open('./right_window/cake1-1.gif')
-    pose_cake_dict_3 = {'1': '1-1', '1-1': '1-2'}
-    pose_cake_dict_4 = {'1-2': '1-3', '1-3': '1-4', '1-4': '1-5', '1-5': '1-6', '1-6': '1-7'}
-    pose_cake_dict_5 = {'1-7': '1-7-1', '1-7-1': '1-7-1'}
-    cake_key = None
-    cake_change = None
+
+    cv2.namedWindow('image', 0)
+    cv2.resizeWindow('image', 1600, 600)
+
+    # 初始化gif变量
     gif_frame = 0
+    gif_start_time = 0
+    gif_play_time = 3
 
-    background_left = cv2.imread('./left_window/background1.jpg')
-    background_left_2 = cv2.imread('./left_window/background2.jpg')
-    background_left_3 = cv2.imread('./left_window/background3.jpg')
-    while True:
-        # 等待键盘输入
-        key = input("请选择蛋糕1或2：")
-
-        if key == '1':
-            background_right = cv2.imread('./right_window/background1.jpg')
-            cake_key = '1'
-            break
-        elif key == '2':
-            background_right = cv2.imread('./right_window/background2.jpg')
-            cake_key = '2'
-            break
-        else:
-            continue
-
+    select_area_img = cv2.imread('./image/left.jpg')
+    select_area_img = cv2.resize(select_area_img, (129, 406))
+    select_bottom_area_img = cv2.imread('./image/bottom.jpg')
+    cake_show_img = cv2.imread('./cake_show/plate.jpg')
+    background_img = np.zeros((600, 1600, 3)).astype('uint8')
     # 用摄像头获取图像进行预测
     capture = cv2.VideoCapture(0)
-    pose_flag = 0   # pose flag初始化
+    flag = 0
+    data_save_list = []
+    cake_state = '0'
+    # cake_gif = Image.open('./cake_show/cake-0-1.gif')
     while True:
         # 获取当前时间
-        ret, cam_img = capture.read()
+        current_time = cv2.getTickCount() / cv2.getTickFrequency()
+        ret, img = capture.read()
         if ret:
-            key = cv2.waitKey(10)
+            img_width = img.shape[1]
+            img_height = img.shape[0]
+            # cake_shwow_img_width = cake_show_img.shape[1]
+            # cake_shwow_img_height = cake_show_img.shape[0]
+            img = cv2.flip(img, 1)
+            # 输入图片预处理
+            img_ = cv2.resize(img, (ops.img_size[1],ops.img_size[0]), interpolation = cv2.INTER_CUBIC)
+            img_ = img_.astype(np.float32)
+            img_ = (img_-128.)/256.
 
-            if key == ord(' '):
-                # 输入图像进行模型预测
-                cam_img = cv2.flip(cam_img, 1)
-                cam_img_ = cv2.resize(cam_img, (ops.img_size[1], ops.img_size[0]), interpolation=cv2.INTER_CUBIC)
-                cam_img_ = cam_img_.astype(np.float32)
-                cam_img_ = (cam_img_ - 128.) / 256.
+            img_ = img_.transpose(2, 0, 1)
+            img_ = torch.from_numpy(img_)
+            img_ = img_.unsqueeze_(0)
 
-                cam_img_ = cam_img_.transpose(2, 0, 1)
-                cam_img_ = torch.from_numpy(cam_img_)
-                cam_img_ = cam_img_.unsqueeze_(0)
+            if use_cuda:
+                img_ = img_.cuda()  # (bs, 3, h, w)
 
-                # start = time.time()
-                pre_ = model_(cam_img_.float())  # 模型推理
-                # end = time.time()
-                # print('inference time: ', end - start)
-                output = pre_.cpu().detach().numpy()
-                output = np.squeeze(output)
+            start = time.time()
+            pre_ = model_(img_.float()) # 模型推理
+            end = time.time()
+            print('inference time: ', end-start)
 
-                # 可视化手势识别预测结果
-                pred_img = cam_img.copy()
-                img_width = pred_img.shape[1]
-                img_height = pred_img.shape[0]
-                pts_hand = {}  # 构建关键点连线可视化结构
-                for i in range(int(output.shape[0] / 2)):
-                    x = (output[i * 2 + 0] * float(img_width))
-                    y = (output[i * 2 + 1] * float(img_height))
+            output = pre_.cpu().detach().numpy()
+            output = np.squeeze(output)
 
-                    pts_hand[str(i)] = {}
-                    pts_hand[str(i)] = {
-                        "x": x,
-                        "y": y,
+            # 判断当前的手势含义，输入output，输出hand_pose
+            data_save_list.append(output[None, ])
+            flag = flag + 1
+            if flag > 5:
+                data_save = np.concatenate(data_save_list,axis=0)
+                np.save('./pose_recog_train_data/pose_0_{}.npy'.format(flag), output)
+                break
+            # flag = flag + 1
+            # if flag > 10:
+            #     break
+
+            # 通过姿势分类模型来分类手势类别
+            # pose_output = pose_model(torch.tensor(output[None:], dtype=torch.float32))
+            # pose_flag = torch.max(pose_output.data)
+            # pose_flag = int(pose_flag)
+            # print('Predicted pose flag:', pose_flag)
+
+            # 根据手势变化蛋糕动画
+            # if pose_flag == 1:
+            #     cake_state = '0-1-2'
+
+            # if cake_state == '0-1-2' and pose_flag == 3:
+            #     更换gif
+                # cake_gif = Image.open('./cake_show/cake-0-1-2.gif')
+                # gif_frame = 0
+                # gif_start_time = current_time
+
+
+            # 计算gif播放时间
+            # gif_time = current_time - gif_start_time
+
+            # 如果gif播放时间超过3秒
+            # if gif_time > gif_play_time:
+            #     更新gif帧
+                # gif_frame += 10
+                # gif_frame %= cake_gif.n_frames
+
+                # 更新gif播放时间
+                # gif_start_time = current_time
+
+            # 获取gif当前帧
+            # cake_gif.seek(gif_frame)
+            # gif_frame_image = cake_gif.convert('RGB')
+            # cake_show_img = np.array(gif_frame_image)
+            # cake_show_img = cv2.cvtColor(cake_show_img, cv2.COLOR_RGB2BGR)
+
+            img_show = img.copy()
+            # 绘制选择区域
+            # 选择区域图像的宽度和高度
+            # select_area_img_height, select_area_img_width, _ = select_area_img.shape
+            # bottom_img_height, bottom_img_width, _ = select_bottom_area_img.shape
+            # 设置选择区域图像的不透明度
+            # opacity = 0.8
+            # 计算选择区域图像在原始图像中的位置
+            # x_offset = 0
+            # y_offset = int(img_height / 2 - select_area_img_height / 2)
+
+            # bottom_x_offset = int(img_width / 2 - bottom_img_width / 2)
+            # bottom_y_offset = int(img_height - bottom_img_height)
+
+            # 将选择图像添加到原始图像的左侧
+            # img_show[y_offset:y_offset + select_area_img_height, x_offset:x_offset + select_area_img_width] = cv2.addWeighted(select_area_img,
+            #                                                                                                                   opacity,
+            #                                                                                                                   img_show[y_offset:y_offset + select_area_img_height,
+            #                                                                                                                   x_offset:x_offset + select_area_img_width],
+            #                                                                                                                   1 - opacity,
+            #                                                                                                                   0)
+            # 将选择图像添加到原始图像的底部
+            # img_show[bottom_y_offset:bottom_y_offset + bottom_img_height,
+            # bottom_x_offset:bottom_x_offset + bottom_img_width] = cv2.addWeighted(select_bottom_area_img,
+            #                                                                       opacity,
+            #                                                                       img_show[bottom_y_offset:bottom_y_offset + bottom_img_height,
+            #                                                                       bottom_x_offset:bottom_x_offset + bottom_img_width],
+            #                                                                       1 - opacity,
+            #                                                                       0)
+
+            pts_hand = {} #构建关键点连线可视化结构
+            for i in range(int(output.shape[0]/2)):
+                x = (output[i*2+0]*float(img_width))
+                y = (output[i*2+1]*float(img_height))
+
+                pts_hand[str(i)] = {}
+                pts_hand[str(i)] = {
+                    "x":x,
+                    "y":y,
                     }
-                draw_bd_handpose(pred_img, pts_hand, 0, 0)  # 绘制关键点连线
+            draw_bd_handpose(img_show, pts_hand,0,0) # 绘制关键点连线
 
-                # ------------- 绘制关键点
-                for i in range(int(output.shape[0] / 2)):
-                    x = (output[i * 2 + 0] * float(img_width))
-                    y = (output[i * 2 + 1] * float(img_height))
+            #------------- 绘制关键点
+            for i in range(int(output.shape[0]/2)):
+                x = (output[i*2+0]*float(img_width))
+                y = (output[i*2+1]*float(img_height))
 
-                    cv2.circle(pred_img, (int(x), int(y)), 3, (255, 50, 60), -1)
-                    cv2.circle(pred_img, (int(x), int(y)), 1, (255, 150, 180), -1)
+                cv2.circle(img_show, (int(x),int(y)), 3, (255,50,60),-1)
+                cv2.circle(img_show, (int(x),int(y)), 1, (255,150,180),-1)
 
-                # 左侧窗口显示
-                if cake_key in ['1-2', '1-3', '1-4', '1-5', '1-6', '1-7']:
-                    left_window = background_left_2.copy()
-                else:
-                    left_window = background_left.copy()
-                height_l, width_l, _ = left_window.shape
-                pred_img_resived = cv2.resize(pred_img, (460, 390))
-                left_window[79:469, 170:630, :] = pred_img_resived
-
-
-                # 根据手势特征预测手势类别
-                pose_output = pose_model(torch.tensor(output[None:], dtype=torch.float32))
-                pose_flag = torch.max(pose_output.data)
-                pose_flag = int(pose_flag)
-                print('Predicted pose flag:', pose_flag)
-
-
-                # 右侧窗口显示
-                if cake_gif is None:
-                    right_window = background_right.copy()
-                else:
-                    if gif_frame < cake_gif.n_frames:
-                        cake_gif.seek(gif_frame)
-                        gif_frame_image = cake_gif.convert('RGB')
-                        gif_frame += 1
-                    else:
-                        gif_frame = cake_gif.n_frames - 1
-                        cake_gif.seek(gif_frame)
-                        gif_frame_image = cake_gif.convert('RGB')
-
-                    cake_show_img = np.array(gif_frame_image)
-                    cake_show_img = cv2.cvtColor(cake_show_img, cv2.COLOR_RGB2BGR)
-                    right_window = cake_show_img.copy()
-
-
-            elif key == -1:
-                # 识别pose_flag并设置左右窗口
-                if pose_flag == 3 and cake_key in pose_cake_dict_3.keys():
-                    cake_change = pose_cake_dict_3[cake_key]
-                    cake_gif = Image.open(cake_gif_dict[cake_change])
-                    gif_frame = 0   # 更换cake gif后，对frame重置零
-                elif pose_flag == 4 and cake_key in pose_cake_dict_4.keys():
-                    cake_change = pose_cake_dict_4[cake_key]
-                    cake_gif = Image.open(cake_gif_dict[cake_change])
-                    gif_frame = 0   # 更换cake gif后，对frame重置零
-
-
-                # 左侧窗口显示
-                if cake_key in ['1-2', '1-3', '1-4', '1-5', '1-6', '1-7']:
-                    left_window = background_left_2.copy()
-                else:
-                    left_window = background_left.copy()
-                height_l, width_l, _ = left_window.shape
-                cam_img_resived = cv2.resize(cam_img, (460, 390))
-                cam_img_resived = cv2.flip(cam_img_resived, 1)
-                left_window[79:469, 170:630, :] = cam_img_resived
-
-                # 右侧窗口显示
-                if cake_change is not None:
-                    cake_key = cake_change
-                if cake_gif is None:
-                    right_window = background_right.copy()
-                else:
-                    if gif_frame < cake_gif.n_frames:
-                        cake_gif.seek(gif_frame)
-                        gif_frame_image = cake_gif.convert('RGB')
-                        gif_frame += 1
-                    else:
-                        gif_frame = cake_gif.n_frames - 1
-                        cake_gif.seek(gif_frame)
-                        gif_frame_image = cake_gif.convert('RGB')
-
-                    cake_show_img = np.array(gif_frame_image)
-                    cake_show_img = cv2.cvtColor(cake_show_img, cv2.COLOR_RGB2BGR)
-                    right_window = cake_show_img.copy()
-                pose_flag = 0 # pose flag重置
-
-            # 左右窗口拼接
-            window = cv2.hconcat([left_window, right_window])
-            cv2.imshow('cake show', window)
-
-
+            # background_img[60:60+img_height, :img_width, :] = img_show
+            # background_img[:cake_show_img.shape[0], 800:800+cake_show_img.shape[1], :] = cake_show_img
+            if ops.vis:
+                # cv2.imshow('image',background_img)
+                cv2.imshow('image', img_show)
+                if cv2.waitKey(5) == 27 :
+                    break
 
     '''
     with torch.no_grad():
